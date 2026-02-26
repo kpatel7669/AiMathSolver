@@ -1,0 +1,278 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AI Math Solver</title>
+    
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.css">
+    <script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.js"></script>
+
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            background-color: #f4f4f9;
+            margin-top: 30px;
+        }
+        /* Make sure the canvas fits on smaller screens using max-width */
+        #mathCanvas {
+            border: 3px solid #333;
+            background-color: black;
+            cursor: crosshair;
+            border-radius: 8px;
+            box-shadow: 0 4px 8px rgba(0,0,0,0.2);
+            margin-top: 10px;
+            max-width: 95vw; 
+        }
+        .controls {
+            margin-top: 15px;
+            margin-bottom: 20px;
+            display: flex;
+            flex-wrap: wrap;
+            justify-content: center;
+            gap: 10px;
+        }
+        button {
+            padding: 10px 20px;
+            font-size: 16px;
+            cursor: pointer;
+            border: none;
+            border-radius: 5px;
+            background-color: #e0e0e0;
+            color: #333;
+            font-weight: bold;
+            transition: 0.2s;
+            /* Prevent double-tap zoom on mobile buttons */
+            touch-action: manipulation; 
+        }
+        button:hover {
+            background-color: #d0d0d0;
+        }
+        /* Style for the currently selected tool */
+        .active-tool {
+            background-color: #007bff;
+            color: white;
+        }
+        .active-tool:hover {
+            background-color: #0056b3;
+        }
+        #solveBtn {
+            background-color: #28a745;
+            color: white;
+        }
+        #solveBtn:hover {
+            background-color: #218838;
+        }
+        
+        /* The Display Area for the AI's answer */
+        #resultsBox {
+            width: 800px;
+            max-width: 90vw;
+            background: white;
+            padding: 20px;
+            border-radius: 8px;
+            box-shadow: 0 4px 8px rgba(0,0,0,0.1);
+            text-align: center;
+            box-sizing: border-box;
+        }
+        .output-label {
+            font-size: 14px;
+            color: #666;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            margin-top: 15px;
+        }
+        #finalAnswer {
+            font-size: 24px;
+            font-weight: bold;
+            color: #d9534f;
+            margin-top: 10px;
+        }
+    </style>
+</head>
+<body>
+
+    <h1>AI Calculus & Math Solver</h1>
+    
+    <div class="controls">
+        <button id="penBtn" class="active-tool" onclick="setTool('pen')">✏️ Pen</button>
+        <button id="eraserBtn" onclick="setTool('eraser')">🧽 Eraser</button>
+        <button id="clearBtn" onclick="clearCanvas()">🗑️ Clear All</button>
+    </div>
+
+    <canvas id="mathCanvas" width="800" height="300"></canvas>
+
+    <div class="controls">
+        <button id="solveBtn" onclick="processImage()">✨ Solve Math</button>
+    </div>
+
+    <div id="resultsBox">
+        <div class="output-label">AI Interpretation:</div>
+        <div id="latexOutput">Waiting for input...</div>
+        
+        <div class="output-label">Calculated Answer:</div>
+        <div id="finalAnswer">...</div>
+    </div>
+
+    <script>
+        const canvas = document.getElementById('mathCanvas');
+        const ctx = canvas.getContext('2d');
+        let isDrawing = false;
+        let currentTool = 'pen'; // Track what tool we are using
+
+        // Fill background black immediately
+        ctx.fillStyle = "black";
+        ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+        // Initial Pen settings
+        ctx.strokeStyle = "white";
+        ctx.lineWidth = 5;
+        ctx.lineCap = "round";
+        ctx.lineJoin = "round";
+
+        // Switch between Pen and Eraser
+        function setTool(tool) {
+            currentTool = tool;
+            
+            // Update button visuals
+            document.getElementById('penBtn').classList.remove('active-tool');
+            document.getElementById('eraserBtn').classList.remove('active-tool');
+            document.getElementById(tool + 'Btn').classList.add('active-tool');
+
+            // Update brush settings
+            if (tool === 'pen') {
+                ctx.strokeStyle = "white";
+                ctx.lineWidth = 5;
+            } else if (tool === 'eraser') {
+                ctx.strokeStyle = "black"; // Draw with the background color!
+                ctx.lineWidth = 25; // Make the eraser nice and thick
+            }
+        }
+
+        // Helper function to figure out if it's a mouse or a finger
+        function getCoordinates(e) {
+            const rect = canvas.getBoundingClientRect();
+            // We have to scale the coordinates in case the CSS resized the canvas on mobile
+            const scaleX = canvas.width / rect.width;
+            const scaleY = canvas.height / rect.height;
+
+            if (e.touches && e.touches.length > 0) {
+                return {
+                    x: (e.touches[0].clientX - rect.left) * scaleX,
+                    y: (e.touches[0].clientY - rect.top) * scaleY
+                };
+            }
+            return {
+                x: (e.clientX - rect.left) * scaleX,
+                y: (e.clientY - rect.top) * scaleY
+            };
+        }
+
+        // Mouse Event Listeners
+        canvas.addEventListener('mousedown', startDrawing);
+        canvas.addEventListener('mousemove', draw);
+        canvas.addEventListener('mouseup', stopDrawing);
+        canvas.addEventListener('mouseout', stopDrawing);
+
+        // Touch Event Listeners (For Mobile)
+        canvas.addEventListener('touchstart', startDrawing, { passive: false });
+        canvas.addEventListener('touchmove', draw, { passive: false });
+        canvas.addEventListener('touchend', stopDrawing);
+        canvas.addEventListener('touchcancel', stopDrawing);
+
+        // The Unified Drawing Logic
+        function startDrawing(e) {
+            e.preventDefault(); // Stop mobile screen from scrolling
+            isDrawing = true;
+            
+            const pos = getCoordinates(e);
+            ctx.beginPath();
+            ctx.moveTo(pos.x, pos.y);
+            
+            // Draw a single dot in case they just tap the screen
+            ctx.lineTo(pos.x, pos.y); 
+            ctx.stroke();
+        }
+
+        function stopDrawing(e) {
+            if (e) e.preventDefault();
+            isDrawing = false;
+            ctx.beginPath();
+        }
+
+        function draw(e) {
+            if (!isDrawing) return;
+            e.preventDefault(); // Stop mobile screen from scrolling
+
+            const pos = getCoordinates(e);
+
+            ctx.lineTo(pos.x, pos.y);
+            ctx.stroke();
+            
+            ctx.beginPath();
+            ctx.moveTo(pos.x, pos.y);
+        }
+
+        // Button Functions
+        function clearCanvas() {
+            ctx.fillStyle = "black";
+            ctx.fillRect(0, 0, canvas.width, canvas.height);
+            document.getElementById('latexOutput').innerHTML = "Waiting for input...";
+            document.getElementById('finalAnswer').innerHTML = "...";
+        }
+
+        async function processImage() {
+            // Change button text so the user knows the AI is thinking
+            const solveBtn = document.getElementById('solveBtn');
+            const originalBtnText = solveBtn.innerText;
+            solveBtn.innerText = "⏳ AI is thinking...";
+            solveBtn.disabled = true;
+
+            try {
+                // 1. Grab the image data from the canvas
+                const imageDataURL = canvas.toDataURL('image/png');
+                
+                // 2. Send it to our local Python server
+                const response = await fetch("https://aimathsolver-1.onrender.com", {
+                    method: "POST",
+                    headers: {
+                        "Content-Type": "application/json"
+                    },
+                    // We package the image exactly how our Python FastAPI expects it
+                    body: JSON.stringify({ image_base64: imageDataURL })
+                });
+
+                // 3. Wait for the Python server to reply
+                const data = await response.json();
+
+                // Check if the server sent back an error
+                if (data.error) {
+                    document.getElementById('finalAnswer').innerText = "Error: " + data.error;
+                    return;
+                }
+
+                // 4. Render the real LaTeX from the AI using KaTeX
+                const latexDiv = document.getElementById('latexOutput');
+                katex.render(data.latex, latexDiv, {
+                    throwOnError: false,
+                    displayMode: true 
+                });
+
+                // 5. Update the answer text from SymPy
+                document.getElementById('finalAnswer').innerText = data.answer;
+
+            } catch (error) {
+                console.error("Connection error:", error);
+                document.getElementById('finalAnswer').innerText = "Failed to connect to the server. Is it running?";
+            } finally {
+                // Change the button back
+                solveBtn.innerText = originalBtnText;
+                solveBtn.disabled = false;
+            }
+        }
+    </script>
+</body>
+</html>
